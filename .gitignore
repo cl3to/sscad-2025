@@ -1,0 +1,4 @@
+bin/main
+bin/main_buffer
+bin/main_gpu
+bin/task-bench
