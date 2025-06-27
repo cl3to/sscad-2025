@@ -14,7 +14,7 @@ applications:
       -np {{ workers }} llvm-offload-mpi-proxy-device :
       -np 1 {{ version }}
       {%- for i in range(ngraphs) %}
-      -steps {{ steps }} -width {{ workers * 2 }} -type {{ type }} -kernel {{ kernel }} -iter {{ iter }}
+      -steps {{ steps }} -width {{ workers * 2 }} -type {{ type }} -kernel {{ kernel }} -iter {{ iter }} -nblocks {{ nblocks }} -tpblock {{ tpblock }}
       {%- if i < ngraphs - 1 %} -and {% endif %}
       {%- endfor %}
 
@@ -66,6 +66,8 @@ benchmarks:
     workers: [1, 2, 3, 4]
     ngraphs: [5]
     steps: [1000]
+    nblocks: [1024]
+    tpblock: [512]
     kernel:
       - compute_bound_gpu
     type:
