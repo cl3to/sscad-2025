@@ -1,0 +1,82 @@
+metadata:
+  description: Task Bench MPP Benchmark
+  version: "1.0"
+  runs: 1
+  timeout: 600
+  retry: False
+  # success_on_return: [0, 213, 255]
+  envvars: []
+
+applications:
+  task-bench:
+    capture:
+      - type: matches
+        name: total_tasks
+        pattern: "Total Tasks"
+        lambda: >
+          lambda x: (
+            int(x.split("Total Tasks ")[1].strip())
+          )
+      - type: matches
+        name: total_deps
+        pattern: "Total Dependencies"
+        lambda: >
+          lambda x: (
+            int(x.split("Total Dependencies ")[1].strip())
+          )
+      - type: matches
+        name: total_flops
+        pattern: "Total FLOPs"
+        lambda: >
+          lambda x: (
+            int(x.split("Total FLOPs ")[1].strip())
+          )
+      - type: matches
+        name: total_bytes
+        pattern: "Total Bytes"
+        lambda: >
+          lambda x: (
+            int(x.split("Total Bytes ")[1].strip())
+          )
+      - type: matches
+        name: wall_time
+        pattern: "Elapsed Time"
+        lambda: >
+          lambda x: (lambda m,e: float(m) * 10**int(e))(
+          *x.split("Elapsed Time ")[1]
+            .split(" seconds")[0]
+            .strip()
+            .lower()
+            .split("e", 1)
+          )
+
+    command: >
+      mpirun -hosts {{ hosts }} -ppn 1
+      -np {{ workers }} llvm-offload-mpi-proxy-device :
+      -env MPIR_CVAR_ENABLE_GPU=0 -env ROCR_VISIBLE_DEVICES="" -np 1 {{ version }}
+      {%- for i in range(ngraphs) %}
+      -steps {{ steps }} -width {{ workers }} -type {{ type }} -radix {{ radix }} -output {{ 2 ** output }} -kernel {{ kernel }} -iter {{ 2 ** (19 - size) }} -nblocks {{ nblocks }} -tpblock {{ tpblock }}
+      {%- if i < ngraphs - 1 %} -and {% endif %}
+      {%- endfor %}
+
+benchmarks:
+  task-bench:
+    version:
+      - bin/tb_mi300a
+    workers: [10]
+    ngraphs: [3]
+    steps: [10]
+    nblocks: [1024]
+    tpblock: [512]
+    kernel:
+      - compute_bound_gpu
+    type:
+      # - spread
+      # - fft
+      - stencil_1d
+      # - trivial
+      # - nearest
+    # radix: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    radix: [5]
+    output: [4, 8, 12, 16, 20, 24, 28, 30]
+    size: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
