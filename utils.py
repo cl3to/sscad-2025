@@ -116,10 +116,10 @@ def generate_byte_mapping(start, end):
     
     return mapping
 
-def find_metg(group):
-    group = group.sort_values('task_granularity')
-    x = group['task_granularity'].astype(float).values
-    y = group['efficiency'].astype(float).values
+def find_metg(group, x_data='task_granularity', y_data='efficiency', method:int = 1):
+    group = group.sort_values(x_data)
+    x = group[x_data].astype(float).values
+    y = group[y_data].astype(float).values
 
     # Verifica se há cruzamento com 50%
     crosses_50 = (np.min(y) <= 50 <= np.max(y))
@@ -127,33 +127,36 @@ def find_metg(group):
     if not crosses_50:
         return pd.Series({'metg': np.nan})
 
-    # Método 1: interpolação cúbica y = f(x) + root-finding
-    # try:
-    #     f = interp1d(x, y, kind='cubic', fill_value='extrapolate')
 
-    #     def func(x_val):
-    #         return float(f(x_val) - 50)
+    if method == 1:
+        # Método 1: interpolação cúbica y = f(x) + root-finding
+        try:
+            f = interp1d(x, y, kind='cubic', fill_value='extrapolate')
 
-    #     for i in range(len(x) - 1):
-    #         if (y[i] - 50) * (y[i + 1] - 50) < 0:
-    #             sol = root_scalar(func, bracket=[x[i], x[i + 1]], method='brentq')
-    #             if sol.converged:
-    #                 return pd.Series({'metg': sol.root})
-    # except Exception as e:
-    #     pass  # Falhou, tenta o fallback
+            def func(x_val):
+                return float(f(x_val) - 50)
 
-    # Método 2: interpolação linear invertida x = f(y)
-    try:
-        # Identifica dois pontos que cruzam 50%
-        for i in range(len(y) - 1):
-            y0, y1 = y[i], y[i + 1]
-            if (y0 - 50) * (y1 - 50) < 0:
-                x0, x1 = x[i], x[i + 1]
-                # Interpolação linear entre os dois
-                metg = x0 + (50 - y0) * (x1 - x0) / (y1 - y0)
-                return pd.Series({'metg': float(metg)})
-    except Exception as e:
-        pass
+            for i in range(len(x) - 1):
+                if (y[i] - 50) * (y[i + 1] - 50) < 0:
+                    sol = root_scalar(func, bracket=[x[i], x[i + 1]], method='brentq')
+                    if sol.converged:
+                        return pd.Series({'metg': sol.root})
+        except Exception as e:
+            pass  # Falhou, tenta o fallback
+
+    elif method == 2:
+        # Método 2: interpolação linear invertida x = f(y)
+        try:
+            # Identifica dois pontos que cruzam 50%
+            for i in range(len(y) - 1):
+                y0, y1 = y[i], y[i + 1]
+                if (y0 - 50) * (y1 - 50) < 0:
+                    x0, x1 = x[i], x[i + 1]
+                    # Interpolação linear entre os dois
+                    metg = x0 + (50 - y0) * (x1 - x0) / (y1 - y0)
+                    return pd.Series({'metg': float(metg)})
+        except Exception as e:
+            pass
 
     return pd.Series({'metg': np.nan})
 
@@ -226,6 +229,115 @@ def generic_line_plot(dataset,
         plt.savefig(output_file, format='pdf', bbox_inches='tight', dpi = 1200)
     else:
         plt.savefig(FIGURES_DIR/output_file, format='pdf', bbox_inches='tight', dpi = 1200)
+
+def generic_multi_line_plot_err_bar(
+    datasets,
+    title,
+    output_file,
+    plots_meta: PlotMeta,
+    dashes: bool=False,
+    markers=True,
+    xticks_rotation='horizontal',
+    fifty_percent_line:bool = False,
+    hlines: list[float] = None,
+    vlines: list[float] = None,
+    log_scale: bool = False,
+    log_scale_y: bool = False,
+    outside_legend: bool = False,
+):
+    # Convert text width to inches (1 inch ≈ 2.54 cm)
+    # text_width_cm = 12  # Springer LNCS default
+    # width_inch = text_width_cm / 2.54  # ~4.72 inches
+    # height_inch = width_inch / 1.6  # ~2.95 inches (adjust ratio as needed)
+    # plt.figure(figsize=(width_inch, height_inch))
+    fig, ax = plt.subplots(figsize=(6, 4))
+
+    plot_meta = plots_meta[0]
+    dataset = datasets[0]
+
+    line_plot = sns.lineplot(
+        data=dataset,
+        x=plot_meta.x_axis,
+        y=plot_meta.y_axis,
+        hue=plot_meta.hue,
+        style=plot_meta.style,
+        dashes=dashes,
+        markers=markers,
+        palette='tab10' if plot_meta.hue is not None else None,
+        err_style="band",
+        errorbar="ci",
+        n_boot=1000,
+        # err_kws={'elinewidth': 1.5, 'capsize': 5},
+        ax=ax
+    )
+
+    line_plot.set_title(title)
+    line_plot.set_xlabel(plot_meta.xlabel)
+    line_plot.set_ylabel(plot_meta.ylabel)
+    if len(plot_meta.xticks) > 0:
+        line_plot.set_xticks(ticks=list(dataset[plot_meta.x_axis].unique()), labels=plot_meta.xticks, rotation=xticks_rotation)
+    if len(plot_meta.yticks) > 0:
+        line_plot.set_yticks(ticks=plot_meta.yticks)
+
+
+    if fifty_percent_line:
+        ymax = line_plot.get_ylim()[1]
+        half_ymax = 50
+        line_plot.axhline(y=half_ymax, color='#FF2200', linestyle='--')
+
+    if hlines is not None:
+        for hline in hlines:
+            line_plot.axhline(y=hline, color='#FF2200', linestyle='--', linewidth=2, )
+
+    if vlines is not None:
+        for vline in vlines:
+            line_plot.axvline(x=vline, color='#FF2200', linestyle='--', linewidth=2, )
+
+    if log_scale:
+        line_plot.set_xscale('log')
+        line_plot.invert_xaxis()
+
+    if log_scale_y:
+        line_plot.set_yscale('log')
+
+    if len(plots_meta) > 1:
+        for i, dataset in enumerate(datasets[1:]):
+            plot_meta_next = plots_meta[i + 1]
+            ax.plot(
+                dataset[plot_meta_next.x_axis],
+                dataset[plot_meta_next.y_axis],
+                linestyle='--',
+                linewidth=2.5,
+                color="#FF2200",
+                label=None
+            )
+
+    line_plot.grid(visible=True, linestyle='--')
+
+    # Personalizar a legenda com labels customizadas
+    handles, labels = line_plot.get_legend_handles_labels()
+    if len(plot_meta.legend_labels) > 0:
+        labels = plot_meta.legend_labels
+
+    if len(plot_meta.legend_title):
+        if outside_legend:
+            plt.legend(
+                handles=handles, labels=labels,
+                # title=plot_meta.legend_title,
+                bbox_to_anchor=(1.05, 1),  # Move to the right
+                loc='upper left',
+                borderaxespad=0.
+            )
+        else:
+            plt.legend(handles=handles, labels=labels, title=plot_meta.legend_title)
+
+
+    plt.tight_layout()
+
+    if (isinstance(output_file, Path)):
+        plt.savefig(output_file, format='pdf', bbox_inches='tight', dpi=1200)
+    else:
+        plt.savefig(FIGURES_DIR/output_file, format='pdf', bbox_inches='tight', dpi=1200)
 
 def generic_line_plot_err_bar(
     dataset,
